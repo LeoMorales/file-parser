@@ -17,16 +17,9 @@ from constants import (
     SQL_VALUE_LINE_TEMPLATE,
     SQL_UPDATE_LINE_TEMPLATE,
     CLAVES)
+from DataExtractor import DataExtractor
 
-LONGITUD_VALIDA_DE_LINEA = 162
-OFFSET_MATRICULA = 8
-OFFSET_CLASE = 4
-OFFSET_TIPO_DOCUMENTO = 9
-OFFSET_SECCION = 4
-OFFSET_CIRCUITO = 4
-OFFSET_MESA = 4
-OFFSET_SEXO = 1
-OFFSET_ORDEN_PADRON = 4
+
 
 
 class WorkerManager(object):
@@ -46,18 +39,19 @@ class WorkerManager(object):
         self.procesed = 0
         self.not_valids = []
         self.counter = 0
+        self.personDataExtractor = DataExtractor()
         
     def create_sql_worker(self):
-        self.workers.append(SQLWorker())
+        self.workers.append(SQLWorker(self.personDataExtractor))
 
     def create_excel_worker(self):
-        self.workers.append(ExcelWorker())
+        self.workers.append(ExcelWorker(self.personDataExtractor))
         
     def init(self, working_file_name):
         for worker in self.workers:
             worker.init(working_file_name)
 
-    def work(self, data):
+    def work_old(self, data):
         """
             En nuestro caso, data va a ser una linea de archivo.
             Cada worker trabaja con ella como lo crea necesario.
@@ -73,6 +67,16 @@ class WorkerManager(object):
             # debug_lineas_no_validas.append(line)
             self.not_valids.append(procesed)
 
+    def work(self, data):
+        """
+            En nuestro caso, data va a ser una linea de archivo.
+            Cada worker trabaja con ella como lo crea necesario.
+        """
+        self.counter += 1
+        for worker in self.workers:
+            worker.work(data)
+        self.procesed +=1
+        
     def finalize(self):
         """
             Finalizar los workers e imprimir la cantitdad de registros
@@ -82,75 +86,6 @@ class WorkerManager(object):
             worker.finalize()
         print("\nFINALIZADO: {}\n\n".format(self.counter))
 
-    def extraer_data(self, line):
-        """
-            Recibe una linea de 160 caracteres de al forma:
-                '999999991900PEREZ                                   JUAN AMALIO                                    AV 9 de JULIO y CORRIENTES        DNI-EA     1   1 0001F 001'
-
-            que respeta el siguiente formato:
-                matricula (8)
-                clase(4)
-                apellido(40)
-                nombres(47)
-                domicilio(35)
-                tipo documento(9)
-                seccion(4)
-                circuito(4)
-                mesa(4)
-                sexo(1)
-                nro orden padron(4)  
-            y retorna un dict con la informacion de la persona tokenizada.
-        """
-        if len(line) > LONGITUD_VALIDA_DE_LINEA:
-            print(len(line))
-            return None
-        
-        # primera separacion:
-        col1 = line[0:52].rstrip() # contiene la matricula la clase y el apellido
-        nombres = line[52:99].strip()  # contiene los nombres
-        domicilio = line[99:133].strip()  # contiene el domicilio
-        col4 = line[133:].strip()  # contien tipo de doc, seccion, circuito, mesa, sexo y nro de orden en el padron
-        # existen casos en que viene sin tipo de documento, al stripear nos queda una linea mas chica...
-        # entonces ese caso es tenido en cuenta en procesar_cuarta_columna y se da por hecho que el dato faltante es
-        # el tipo de documento.
-        
-        person = {}
-        person = self.procesar_primer_col(col1, person)
-        person['nombres'] = nombres.replace("'", "")
-        person['domicilio'] = domicilio.replace("'", "").replace('"', "")
-        person = self.procesar_cuarta_col(col4, person)
-        
-        return person
-
-    def procesar_primer_col(self, columna, person):
-        person ['matricula'] = columna[0:OFFSET_MATRICULA].strip()
-        person ['clase'] = columna[OFFSET_MATRICULA: (OFFSET_MATRICULA+OFFSET_CLASE)].strip()
-        person ['apellido'] = columna[(OFFSET_MATRICULA+OFFSET_CLASE):].strip().replace("'", "")
-
-        return person
-        
-    def procesar_cuarta_col(self, columna, person):
-
-        if len(columna) < 24:
-            # es el caso en el que viene sin tipo de doc
-            # es el unico caso que se descubrio en 10k registros
-            person ['tipo_documento'] = ""
-            person ['nro_orden_padron'] = columna[-4:].strip()
-            person ['sexo'] = columna[-5:-4].strip()
-            person ['mesa'] = columna[-9:-5].strip()
-            person ['circuito'] = columna[-13: -9].strip()
-            person ['seccion'] = columna[:-13].strip()
-            return person
-
-        person ['tipo_documento'] = columna[0:OFFSET_TIPO_DOCUMENTO].strip()
-        person ['seccion'] = columna[9: 9+OFFSET_SECCION].strip()
-        person ['circuito'] = columna[13: 13+OFFSET_CIRCUITO].strip()
-        person ['mesa'] = columna[17: 17+OFFSET_MESA].strip()
-        person ['sexo'] = columna[21: 21+OFFSET_SEXO].strip()
-        person ['nro_orden_padron'] = columna[22:].strip()
-
-        return person
-    
 
 class SQLWorker(object):
     """
@@ -159,8 +94,9 @@ class SQLWorker(object):
         y genera un archivo con el script SQL correspondiente
         a la carga de dicho lote de registros.
     """
-    def __init__(self):
+    def __init__(self, dataExtractor):
         super(SQLWorker, self).__init__()
+        self.dataExtractor = dataExtractor
     
     def init(self, working_file_name):
         """
@@ -175,7 +111,7 @@ class SQLWorker(object):
         self.working_file.write(SQL_FILE_HEADER)
         self.lines_writed = 0
 
-    def work(self, a_person):
+    def work(self, data):
         """
             Acciones de procesamiento:
                 - Llenar el template de linea SQL con los valores del
@@ -183,6 +119,7 @@ class SQLWorker(object):
                 - Escribirlo en el archivo.
                 - Incrementar contador de lineas escritas.
         """
+        a_person = self.dataExtractor.process_person(data)
         person_values_for_sql = SQL_VALUE_LINE_TEMPLATE.format(
             utiles.validar_matricula(a_person.get('matricula')),
             utiles.validar_tipo_documento(a_person.get('tipo_documento')),
@@ -222,11 +159,12 @@ class ExcelWorker(object):
         Procesa diccionarios con la informacion de la persona
         y genera un archivo excel con los registros en filas.
     """
-    def __init__(self):
+    def __init__(self, dataExtractor):
         super(ExcelWorker, self).__init__()
         self.workbook = None
         self.worksheet = None
         self.row_count = 0
+        self.dataExtractor = dataExtractor
 
 
     def init(self, output_file_name):
@@ -239,14 +177,14 @@ class ExcelWorker(object):
         self.workbook = Workbook(self.complete_output_file_name)
         self.worksheet = workbook.add_worksheet()
 
-    def work(self, person):
+    def work(self, data):
         """
             Acciones de procesamiento:
                 - Escribir en cada columna de la fila actual, los valores
                 de las claves del diccionario de persona recibido
                 - Incrementar contador de lineas escritas.
         """
-
+        person = self.dataExtractor.process_person(data)
         for col_i, clave in enumerate(CLAVES):
             self.worksheet.write(self.row_count, col_i, person.get(clave))
         self.row_count += 1

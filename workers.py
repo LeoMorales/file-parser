@@ -3,6 +3,17 @@
 # @Date:   2017-08-14 15:17:59
 # @Last Modified by:   leomorales
 # @Last Modified time: 2017-08-09 17:23:52
+#
+#   Estos workers se encargan de trabajar con la informacion extraida de cada 
+#   linea de un archivo en particular.
+#   Los que saben la semantica de cada linea, son los DataExtractors
+#   que procesan una linea y nos la devuelven como un dict con el
+#   podemos continuar trabajando (ver DataExtractor.py), realizando la
+#   accion para la cual está pensabo el worker.
+#   
+#   Para cordinar los diferentes worker que van surgiendo,
+#   tenemos al WorkerManager.
+
 try:
     from xlsxwriter import Workbook
 except ImportError:
@@ -16,7 +27,9 @@ from constants import (
     SQL_FILE_HEADER,
     SQL_VALUE_LINE_TEMPLATE,
     SQL_UPDATE_LINE_TEMPLATE,
-    CLAVES)
+    CLAVES,
+    SQL_MESA_INSERT_TEMPLATE,
+    SQL_FILE_HEADER__MESAS)
 from DataExtractor import DataExtractor
 
 
@@ -40,6 +53,7 @@ class WorkerManager(object):
         self.not_valids = []
         self.counter = 0
         self.personDataExtractor = DataExtractor()
+        self.placeDataExtractor = DataExtractor()
         
     def create_sql_worker(self):
         self.workers.append(SQLWorker(self.personDataExtractor))
@@ -47,25 +61,12 @@ class WorkerManager(object):
     def create_excel_worker(self):
         self.workers.append(ExcelWorker(self.personDataExtractor))
         
+    def create_mesa_worker(self):
+        self.workers.append(MesasWorker(self.placeDataExtractor))
+        
     def init(self, working_file_name):
         for worker in self.workers:
             worker.init(working_file_name)
-
-    def work_old(self, data):
-        """
-            En nuestro caso, data va a ser una linea de archivo.
-            Cada worker trabaja con ella como lo crea necesario.
-        """
-        self.counter += 1
-        person = self.extraer_data(data)
-        if person:
-            person['id'] = self.procesed
-            for worker in self.workers:
-                worker.work(person)
-            self.procesed +=1
-        else:
-            # debug_lineas_no_validas.append(line)
-            self.not_valids.append(procesed)
 
     def work(self, data):
         """
@@ -147,7 +148,7 @@ class SQLWorker(object):
                 - Y la cantidad de lineas escritas
         """
         self.working_file.close()
-        print("######## FIN SQL FILE GENERATOR ###########")
+        print("\n\t######## FIN SQL FILE GENERATOR ###########")
         print('\tarchivo generado: {}.'.format(self.complete_output_file_name))
         print('\tcantidad de lineas del archivo {}.'.format(str(self.lines_writed)))
 
@@ -197,6 +198,73 @@ class ExcelWorker(object):
                 - Y la cantidad de lineas escritas
         """
         self.workbook.close()
-        print("######## FIN EXCEL FILE GENERATOR ###########")
+        print("\n\t######## FIN EXCEL FILE GENERATOR ###########")
         print('\tarchivo generado: {}.'.format(self.complete_output_file_name))
         print('\tcantidad de lineas del archivo {}.'.format(str(self.row_count)))
+
+class MesasWorker(object):
+    """
+        MesasWorker
+        Procesa lineas de archivo excel con información de las mesas por escuelas.
+        Estas líneas tienen el siguiente formato:
+        ESCUELA N° 9999; ANTARTIDA ARGENTINA 9999 RAWSON; 1; 1; 1; 4; 4; 9999
+
+        La informacion que nos importa para cargar mesas es la sig:
+        - nombre de la escuela (columna 0)
+        - direccion de la escuela (columna 1)
+        - numero de mesa (numeros entre la columna 4 y 5)
+
+    """
+    def __init__(self, dataExtractor):
+        super(MesasWorker, self).__init__()
+        self.dataExtractor = dataExtractor
+    
+    def init(self, working_file_name):
+        """
+            Acciones de inicializacion:
+                - Crea el archivo de trabajo.
+                - Escribir el HEADER.
+                - Inicializar en 0 los contadores de lineas y de mesas.
+        """
+        # guardamos el nombre para mostrarlo al finalizar:
+        self.complete_output_file_name = "../output/output_{}.sql".format(working_file_name)
+        self.working_file = codecs.open(self.complete_output_file_name, 'w', encoding='utf-8', errors='ignore')
+        self.working_file.write(SQL_FILE_HEADER__MESAS)
+        self.lines_readed = 0
+        self.mesas = 0
+
+    def work(self, data):
+        """
+            Acciones de procesamiento:
+                - Procesar la informacion de la escuela con el data extrator
+                - Analizar que mesas tiene esa escuela
+                - Escribirlo en el archivo.
+                - Incrementar contador de mesas por c/mesa detectada.
+                - Incrementar contador de lineas escritas.
+        """
+        escuela = self.dataExtractor.process_escuela(data)
+        # pprint(escuela)
+        if escuela:
+            for mesa in range(int(escuela.get("mesa-desde")), int(escuela.get("mesa-hasta"))+1):
+                self.working_file.write(SQL_MESA_INSERT_TEMPLATE.format(
+                    mesa,
+                    escuela.get('nombre').replace("'", " "),
+                    escuela.get('domicilio').replace("'", " "),
+                    ))
+                self.mesas += 1
+        self.lines_readed += 1
+
+
+    def finalize(self):
+        """
+            Acciones de finalizacion:
+                - Cerrar el archivo de trabajo
+                - Mostrar el nombre del archivo que se genero.
+                - Y la cantidad de lineas escritas
+        """
+        self.working_file.close()
+        print("\n\t######## FIN SQL FILE GENERATOR ###########")
+        print("\t########        MESAS           ###########")
+        print('\tarchivo generado: {}.'.format(self.complete_output_file_name))
+        print('\tcantidad de lineas del archivo {}.'.format(str(self.lines_readed)))
+        print('\tcantidad de mesas identificadas {}.'.format(str(self.mesas)))

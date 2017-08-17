@@ -37,8 +37,8 @@ def analize_file(wm, data_file_name, output_file_name, line_start):
     # Prints finales
     wm.finalize()
     return wm.procesed
-    
-if __name__ == '__main__':
+
+def parsear_argumentos():
     parser = argparse.ArgumentParser(description='Genera un archivo SQL a partir de un archivo cpa')
     parser.add_argument('archivo', metavar='A', type=str,
                         help='archivo que contiene en cada linea, el nombre del archivo a parsear y el nombre que se le quiere asignar a la salida sql')
@@ -50,14 +50,23 @@ if __name__ == '__main__':
     print("argumentos:")
     print(args.archivo)
 
+    return args.archivo
+
+if __name__ == '__main__':
+    # Obtener el nombre del archivo que contiene los nombres de los archivos a analizar:
+    input_file_names = parsear_argumentos()
+    
+    # Inicializar el worker manager y los workers:
     wm = WorkerManager()
-    wm.create_sql_worker()
+    # wm.create_sql_worker()
+    wm.create_mesa_worker()
     if not IMPOSIBLE_GENERAR_EXCEL_WE:
         wm.create_excel_worker()
 
+    # main loop:
     lines = INICIO_CUENTA
     try:
-        archivo = open(args.archivo, 'r')
+        archivo = open(input_file_names, 'r')
         for line in archivo:
             data_file_name, output_file_name = list(map(lambda name: name.strip(), line.split(',')))
             lines = analize_file(wm, data_file_name, output_file_name, lines)

@@ -1,3 +1,1 @@
-../load_files/cpa_1_50K.txt, borrarDE1
-../load_files/cpa_50001_100K.txt, borrarDE2
-../load_files/cpa_100001_to_150K.txt, borrarDE3
+path\al\excel\establecimientos_del_padron.csv, todas_las_mesas

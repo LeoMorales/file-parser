@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
 # @Author: leomorales
+#
+#   Los extractores de datos, saben como tratar (parsear) un string
+#   para generar un objeto de salida (en estos casos trabajamos con
+#   diccionarios, pero podrian ser un objeto tambien).
+#   Este objeto de salida va a poder ser correctamente utilizado
+#   por el worker que utiliza este data esxtractor.
 
 LONGITUD_VALIDA_DE_LINEA = 162
 OFFSET_MATRICULA = 8
@@ -11,10 +17,18 @@ OFFSET_MESA = 4
 OFFSET_SEXO = 1
 OFFSET_ORDEN_PADRON = 4
 
+#Constantes para process_escuela:
+CELDA_A0 = "Nombre"
+COLUMNA_NOMBRE = 0
+COLUMNA_DOMICILIO = 1
+COLUMNA_MESA_DESDE = 5
+COLUMNA_MESA_HASTA = 6
+
 class DataExtractor(object):
     """docstring for DataExtractor"""
     def __init__(self):
         super(DataExtractor, self).__init__()
+        self.last_data_received = None
         self.last_data_processed = None
 
     def process_person(self, data):
@@ -36,8 +50,12 @@ class DataExtractor(object):
                 nro orden padron(4)  
             y retorna un dict con la informacion de la persona tokenizada.
         """
+        if data == self.last_data_received:
+            print("it founded in cache :P")
+            return self.last_data_processed
+
         if len(data) > LONGITUD_VALIDA_DE_LINEA:
-            print(len(data))
+            print("Error: line to long: {}".format(len(data)))
             return None
         
         # primera separacion:
@@ -55,17 +73,17 @@ class DataExtractor(object):
         person['domicilio'] = domicilio.replace("'", "").replace('"', "")
         person = self.procesar_cuarta_col(col4, person)
         
+        self.last_data_received = data
+        self.last_data_processed = person
         return person
 
     def procesar_primer_col(self, columna, person):
         person ['matricula'] = columna[0:OFFSET_MATRICULA].strip()
         person ['clase'] = columna[OFFSET_MATRICULA: (OFFSET_MATRICULA+OFFSET_CLASE)].strip()
         person ['apellido'] = columna[(OFFSET_MATRICULA+OFFSET_CLASE):].strip().replace("'", "")
-
         return person
         
     def procesar_cuarta_col(self, columna, person):
-
         if len(columna) < 24:
             # es el caso en el que viene sin tipo de doc
             # es el unico caso que se descubrio en 10k registros
@@ -85,3 +103,33 @@ class DataExtractor(object):
         person ['nro_orden_padron'] = columna[22:].strip()
 
         return person
+
+    def process_escuela(self, data):
+        """
+            Recibe una linea con el formato:
+            ESCUELA N° 9999    ANTARTIDA ARGENTINA 9999 RAWSON    1    1    1    4    4    9999
+
+            Retorna un dict <<escuela>> con la informacion que nos importa:
+            >>pprint(escuela)
+            >> {
+                    'nombre': 'ESCUELA N° 9999'
+                    'domicilio': 'ANTARTIDA ARGENTINA 9999 RAWSON'
+                    'mesa-desde': 1
+                    'mesa-hasta': 4
+                }
+            Si la linea no respeta el formato, retorna dict vacio.
+
+        """
+        # return "".join(map(lambda s: "{} ||| ".format(s), data.split(";")))
+        columnas = data.split(";")
+        if len(columnas) > 10:
+            return {}
+        if columnas[0] == CELDA_A0:
+            return {}
+        
+        escuela = {}
+        escuela['nombre'] = columnas[COLUMNA_NOMBRE]
+        escuela['domicilio'] = columnas[COLUMNA_DOMICILIO]
+        escuela['mesa-desde'] = columnas[COLUMNA_MESA_DESDE]
+        escuela['mesa-hasta'] = columnas[COLUMNA_MESA_HASTA]
+        return escuela

@@ -19,6 +19,16 @@ base de datos, por lo cual podemos generar el script sql que cargue la base
 a partir de la información de los archivos recibidos.
 De yapa, queremos pasar estos registros a un archivo excel.
 
+## Run:
+
+>> python parser.py convertir.txt
+
+Las líneas de convertir.txt tiene el siguiente formato:
+
+  <nombre_del_archivo_a_parsear>, <nombre_para_los_archivos_de_salida>
+
+donde <nombre_para_los_archivos_de_salida> no tiene extensión.
+
 Desafíos en el camino:
 - Como evito tocar el código para cambiar el comportamiento segun desee
   generar el archivo sql, o el archivo excel, o ambos. Parametrizar

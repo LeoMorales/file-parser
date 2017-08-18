@@ -37,23 +37,32 @@ from DataExtractor import DataExtractor
 
 class WorkerManager(object):
     """
-        Para evitar estar presuntanto si tengo que generar los archivos
-        SQL, o los excels, o ambos...dejamos que una clase se encargue
-        de toda esta logica mientras evitamos preguntarnos:
-            - debo generar solo los sql?
-            - debo generar solo los excels?
-            - debo generar ambos?
-        asi, por cada accion que hagamos (inicializacion, acciones
-        principales o cierre)
+    Para evitar estar presuntanto si tengo que generar los archivos
+    SQL, o los excels, o ambos...dejamos que una clase se encargue
+    de toda esta logica mientras evitamos preguntarnos:
+        - debo generar solo los sql?
+        - debo generar solo los excels?
+        - debo generar ambos?
+    asi, por cada accion que hagamos (inicializacion, acciones
+    principales o cierre)
     """
-    def __init__(self):
+    def __init__(self, count_start):
+        """ Crea un nuevo WorkerManager
+    
+        Args:
+            count_start (int): Indica a partir de donde se cuentan los ids.
+
+        Returns:
+            WorkerManager: wm.
+
+        """
         super(WorkerManager, self).__init__()
         self.workers = []
         self.procesed = 0
         self.not_valids = []
-        self.counter = 0
         self.personDataExtractor = DataExtractor()
         self.placeDataExtractor = DataExtractor()
+        self.relative_counter = count_start
         
     def create_sql_worker(self):
         self.workers.append(SQLWorker(self.personDataExtractor))
@@ -66,59 +75,60 @@ class WorkerManager(object):
         
     def init(self, working_file_name):
         for worker in self.workers:
-            worker.init(working_file_name)
+            worker.init(working_file_name, self.relative_counter)
 
     def work(self, data):
         """
-            En nuestro caso, data va a ser una linea de archivo.
-            Cada worker trabaja con ella como lo crea necesario.
+        En nuestro caso, data va a ser una linea de archivo.
+        Cada worker trabaja con ella como lo crea necesario.
         """
-        self.counter += 1
         for worker in self.workers:
             worker.work(data)
         self.procesed +=1
+        self.relative_counter +=1
         
     def finalize(self):
         """
-            Finalizar los workers e imprimir la cantitdad de registros
-            procesados hasta el momento
+        Finalizar los workers e imprimir la cantitdad de registros
+        procesados hasta el momento
         """
         for worker in self.workers:
             worker.finalize()
-        print("\nFINALIZADO: {}\n\n".format(self.counter))
+        print("\nFINALIZADO: {}\n\n".format(self.procesed))
 
 
 class SQLWorker(object):
-    """
-        SQLWorker:
-        Procesa diccionarios con la informacion de la persona
-        y genera un archivo con el script SQL correspondiente
-        a la carga de dicho lote de registros.
+    """SQLWorker:
+    
+    Procesa diccionarios con la informacion de la persona
+    y genera un archivo con el script SQL correspondiente
+    a la carga de dicho lote de registros.
     """
     def __init__(self, dataExtractor):
         super(SQLWorker, self).__init__()
         self.dataExtractor = dataExtractor
     
-    def init(self, working_file_name):
+    def init(self, working_file_name, count_start):
         """
-            Acciones de inicializacion:
-                - Crea el archivo de trabajo.
-                - Escribir el HEADER.
-                - Inicializar en 0 el contador de lineas.
+        Acciones de inicializacion:
+            - Crea el archivo de trabajo.
+            - Escribir el HEADER.
+            - Inicializar en 0 el contador de lineas.
         """
         # guardamos el nombre para mostrarlo al finalizar:
         self.complete_output_file_name = OUTPUT_FILE_NAME_TEMPLATE.format(working_file_name)
         self.working_file = codecs.open(self.complete_output_file_name, 'w', encoding='utf-8', errors='ignore')
         self.working_file.write(SQL_FILE_HEADER)
         self.lines_writed = 0
+        self.relative_counter = count_start
 
     def work(self, data):
         """
-            Acciones de procesamiento:
-                - Llenar el template de linea SQL con los valores del
-                diccionario de persona recibido.
-                - Escribirlo en el archivo.
-                - Incrementar contador de lineas escritas.
+        Acciones de procesamiento:
+            - Llenar el template de linea SQL con los valores del
+            diccionario de persona recibido.
+            - Escribirlo en el archivo.
+            - Incrementar contador de lineas escritas.
         """
         a_person = self.dataExtractor.process_person(data)
         person_values_for_sql = SQL_VALUE_LINE_TEMPLATE.format(
@@ -133,19 +143,20 @@ class SQLWorker(object):
             utiles.validar_mesa(a_person.get('mesa')),
             utiles.validar_sexo(a_person.get('sexo')),
             utiles.validar_nro_de_orden(a_person.get('nro_orden_padron')),
-            utiles.validar_id(a_person.get('id')),
+            utiles.validar_id(self.relative_counter),
             )
         #pprint(person_values_for_sql)
         self.working_file.write(person_values_for_sql)
         self.lines_writed += 1
+        self.relative_counter += 1
 
 
     def finalize(self):
         """
-            Acciones de finalizacion:
-                - Cerrar el archivo de trabajo
-                - Mostrar el nombre del archivo que se genero.
-                - Y la cantidad de lineas escritas
+        Acciones de finalizacion:
+            - Cerrar el archivo de trabajo
+            - Mostrar el nombre del archivo que se genero.
+            - Y la cantidad de lineas escritas
         """
         self.working_file.close()
         print("\n\t######## FIN SQL FILE GENERATOR ###########")
@@ -156,9 +167,9 @@ class SQLWorker(object):
 
 class ExcelWorker(object):
     """
-        ExcelWorker
-        Procesa diccionarios con la informacion de la persona
-        y genera un archivo excel con los registros en filas.
+    ExcelWorker
+    Procesa diccionarios con la informacion de la persona
+    y genera un archivo excel con los registros en filas.
     """
     def __init__(self, dataExtractor):
         super(ExcelWorker, self).__init__()
@@ -168,11 +179,11 @@ class ExcelWorker(object):
         self.dataExtractor = dataExtractor
 
 
-    def init(self, output_file_name):
+    def init(self, output_file_name, count_start):
         """
-            Acciones de inicializacion:
-                - Crear el archivo de trabajo con el nombre recibido.
-                - Inicializar la hoja con la que vamos a trabajar.
+        Acciones de inicializacion:
+            - Crear el archivo de trabajo con el nombre recibido.
+            - Inicializar la hoja con la que vamos a trabajar.
         """
         self.complete_output_file_name = '../output/excel/'+output_file_name+'.xlsx'
         self.workbook = Workbook(self.complete_output_file_name)
@@ -180,10 +191,10 @@ class ExcelWorker(object):
 
     def work(self, data):
         """
-            Acciones de procesamiento:
-                - Escribir en cada columna de la fila actual, los valores
-                de las claves del diccionario de persona recibido
-                - Incrementar contador de lineas escritas.
+        Acciones de procesamiento:
+            - Escribir en cada columna de la fila actual, los valores
+            de las claves del diccionario de persona recibido
+            - Incrementar contador de lineas escritas.
         """
         person = self.dataExtractor.process_person(data)
         for col_i, clave in enumerate(CLAVES):
@@ -192,10 +203,10 @@ class ExcelWorker(object):
 
     def finalize(self):
         """
-            Acciones de finalizacion:
-                - Cerrar el archivo de trabajo
-                - Mostrar el nombre del archivo que se genero.
-                - Y la cantidad de lineas escritas
+        Acciones de finalizacion:
+            - Cerrar el archivo de trabajo
+            - Mostrar el nombre del archivo que se genero.
+            - Y la cantidad de lineas escritas
         """
         self.workbook.close()
         print("\n\t######## FIN EXCEL FILE GENERATOR ###########")
@@ -204,27 +215,27 @@ class ExcelWorker(object):
 
 class MesasWorker(object):
     """
-        MesasWorker
-        Procesa lineas de archivo excel con información de las mesas por escuelas.
-        Estas líneas tienen el siguiente formato:
-        ESCUELA N° 9999; ANTARTIDA ARGENTINA 9999 RAWSON; 1; 1; 1; 4; 4; 9999
+    MesasWorker
+    Procesa lineas de archivo excel con información de las mesas por escuelas.
+    Estas líneas tienen el siguiente formato:
+    ESCUELA N° 9999; ANTARTIDA ARGENTINA 9999 RAWSON; 1; 1; 1; 4; 4; 9999
 
-        La informacion que nos importa para cargar mesas es la sig:
-        - nombre de la escuela (columna 0)
-        - direccion de la escuela (columna 1)
-        - numero de mesa (numeros entre la columna 4 y 5)
+    La informacion que nos importa para cargar mesas es la sig:
+    - nombre de la escuela (columna 0)
+    - direccion de la escuela (columna 1)
+    - numero de mesa (numeros entre la columna 4 y 5)
 
     """
     def __init__(self, dataExtractor):
         super(MesasWorker, self).__init__()
         self.dataExtractor = dataExtractor
     
-    def init(self, working_file_name):
+    def init(self, working_file_name, count_start):
         """
-            Acciones de inicializacion:
-                - Crea el archivo de trabajo.
-                - Escribir el HEADER.
-                - Inicializar en 0 los contadores de lineas y de mesas.
+        Acciones de inicializacion:
+            - Crea el archivo de trabajo.
+            - Escribir el HEADER.
+            - Inicializar en 0 los contadores de lineas y de mesas.
         """
         # guardamos el nombre para mostrarlo al finalizar:
         self.complete_output_file_name = "../output/output_{}.sql".format(working_file_name)
@@ -235,12 +246,12 @@ class MesasWorker(object):
 
     def work(self, data):
         """
-            Acciones de procesamiento:
-                - Procesar la informacion de la escuela con el data extrator
-                - Analizar que mesas tiene esa escuela
-                - Escribirlo en el archivo.
-                - Incrementar contador de mesas por c/mesa detectada.
-                - Incrementar contador de lineas escritas.
+        Acciones de procesamiento:
+            - Procesar la informacion de la escuela con el data extrator
+            - Analizar que mesas tiene esa escuela
+            - Escribirlo en el archivo.
+            - Incrementar contador de mesas por c/mesa detectada.
+            - Incrementar contador de lineas escritas.
         """
         escuela = self.dataExtractor.process_escuela(data)
         # pprint(escuela)
@@ -257,10 +268,10 @@ class MesasWorker(object):
 
     def finalize(self):
         """
-            Acciones de finalizacion:
-                - Cerrar el archivo de trabajo
-                - Mostrar el nombre del archivo que se genero.
-                - Y la cantidad de lineas escritas
+        Acciones de finalizacion:
+            - Cerrar el archivo de trabajo
+            - Mostrar el nombre del archivo que se genero.
+            - Y la cantidad de lineas escritas
         """
         self.working_file.close()
         print("\n\t######## FIN SQL FILE GENERATOR ###########")

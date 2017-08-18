@@ -1,1 +1,2 @@
-path\al\excel\establecimientos_del_padron.csv, todas_las_mesas
+..\load_files\cpa_100001_to_150K.txt, prueba_no_rompi_nada00
+..\load_files\cpa_200001_to_250K.txt, prueba_no_rompi_nada01

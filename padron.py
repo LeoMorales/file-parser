@@ -20,7 +20,7 @@ except ImportError:
 # sys.setdefaultencoding('utf-8')
 
 
-INICIO_CUENTA = 0
+INICIO_CUENTA = 900000
 
 def analize_file(wm, data_file_name, output_file_name, line_start):
     # Inicializacion
@@ -57,9 +57,9 @@ if __name__ == '__main__':
     input_file_names = parsear_argumentos()
     
     # Inicializar el worker manager y los workers:
-    wm = WorkerManager()
-    # wm.create_sql_worker()
-    wm.create_mesa_worker()
+    wm = WorkerManager(INICIO_CUENTA)
+    wm.create_sql_worker()
+    # wm.create_mesa_worker()
     if not IMPOSIBLE_GENERAR_EXCEL_WE:
         wm.create_excel_worker()
 
